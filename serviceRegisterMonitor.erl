@@ -13,26 +13,33 @@ start(SrID) ->
 	MonitorRef.
 
 init(SrID) -> 
-	MonitorRef = monitor(process,SrID),
-	io:format("serviceRegisterMonitor: my ref ~p monitorujem ~p moje id ~p~n",[MonitorRef,SrID, self()]),
-	loop(MonitorRef).
+	Ref = monitor(process,SrID),
+	io:format("serviceRegisterMonitor: my ref ~p monitorujem ~p moje id ~p~n",[Ref,SrID, self()]),
+	loop(Ref).
 
-loop(MonitorRef) ->
+loop(Ref) ->
+	Master = {sr,node()},
 	receive
 
 		%% padol master SR
-		{'DOWN', MonitorRef, process, sr, Why} ->
+		{'DOWN',Ref, process, Master, Why} ->
 			io:format("serviceRegisterMonitor: padol sr master dovod ~p~n",[Why]),
 			lbsr ! {self(), srMstDown},
 			register(sr, _Pid = spawn(fun() -> serviceRegister:start(master,null) end));
 
 
 		%% mirror ukonceny 
-		{'DOWN', MonitorRef, process, SrID, normal} -> loop(MonitorRef);
+		{'DOWN',Ref, process, SrID, normal} -> 
+			io:format("serviceRegisterMonitor: padol sr  ~p dovod ~p~n",[SrID,normal]),
+			loop(Ref);
 
 
 		%%padol mirror 
-		{'DOWN', MonitorRef, process, SrID, Why} -> loop(MonitorRef)
+		{'DOWN',Ref, process, SrID, Why} -> 
+			io:format("serviceRegisterMonitor: padol sr  ~p dovod ~p~n",[SrID,Why]),
+			loop(Ref);
+
+		Any -> Any
 	end.	
 
 

@@ -11,10 +11,10 @@ start(Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid,SRList) ->
 
 	io:format("errorHandler: som nastartovany, moje pid je ~p~n", [self()]),
 	process_flag(trap_exit, true),
-	link(SrMst_pid),
-	link(Ch_pid),
-	link(Lbsr_pid),
-	link(Ws_pid),
+	%link(SrMst_pid),
+	%link(Ch_pid),
+	%link(Lbsr_pid),
+	%link(Ws_pid),
 	loop(state,Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid,SRList).	
 
 
@@ -23,34 +23,34 @@ loop(_State, Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid,SRList) -
 	receive 
 		%% srmst je dead
 		%% treba informovat lbsr, vyradit zo SRlist, zistit ci je nejaky mirror, vybrat mirrror/spawnut novy sr, dict
-		{'EXIT', SrMst_pid, Reason} ->
-			io:format("errorHandler: prijal som exit signal od MstSr pid: ~p dovod: ~p ~n", [SrMst_pid, Reason]),
-			SRList2 = lists:delete(SrMst_pid, SRList),
-			Lbsr ! {self(), iAmEh, srMstDown},
-				if
-							SRList2 =:= [] ->  %% srlist je prazdny, spawnem noveho srmst
-								io:format("errorHandler: SRList je prazdny, spawnem noveho mastra~n"),
-								register(SrMst, SrMst_pid2 = spawn(fun() -> serviceRegister:start(master,null) end)),
-								io:format("errorHandler: restartoval som sr, jeho pid je ~p~n",[SrMst_pid2]),
-								link(SrMst_pid2),  %% linknem novy sr
-								SRList3 = SRList2 ++ [SrMst_pid2], %% pridam ho do listu pre seba
-								Lbsr ! {self(), iAmEh, newSrList, SRList3, newMstPid, SrMst_pid2},
-								io:format("errorHandler: informoval som lbsr, novy srlist ~p, novy mst ~p ~n", [SRList3,SrMst_pid2] ),
-								loop(state1, Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid2,SRList3);
-							true ->
-								io:format("errorHandler: SRList nie je prazdny, spawnem noveho mastra, odovzdam mu dict~n"),
-								Lbsr ! {self(), iAmEh, giveDict},
-								receive
-									{Lbsr_pid, dict, Dict} ->
-										register(SrMst, SrMst_pid3 = spawn(fun() -> serviceRegister:start(master,Dict) end)),
-										io:format("errorHandler: restartoval som sr, jeho pid je ~p~n",[SrMst_pid3]),
-										link(SrMst_pid3),
-										SRList3 = SRList2 ++ [SrMst_pid3],
-										Lbsr ! {self(), iAmEh, newSrList, SRList3, newMstPid, SrMst_pid3},
-										io:format("errorHandler: informoval som lbsr, novy srlist ~p, novy mst ~p ~n", [SRList3,SrMst_pid3] ),
-										loop(state1, Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid3,SRList3)
-								end				
-				end;
+	%	{'EXIT', SrMst_pid, Reason} ->
+	%		io:format("errorHandler: prijal som exit signal od MstSr pid: ~p dovod: ~p ~n", [SrMst_pid, Reason]),
+	%		SRList2 = lists:delete(SrMst_pid, SRList),
+	%		Lbsr ! {self(), iAmEh, srMstDown},
+	%			if
+	%						SRList2 =:= [] ->  %% srlist je prazdny, spawnem noveho srmst
+	%							io:format("errorHandler: SRList je prazdny, spawnem noveho mastra~n"),
+	%							register(SrMst, SrMst_pid2 = spawn(fun() -> serviceRegister:start(master,null) end)),
+	%							io:format("errorHandler: restartoval som sr, jeho pid je ~p~n",[SrMst_pid2]),
+	%							link(SrMst_pid2),  %% linknem novy sr
+	%							SRList3 = SRList2 ++ [SrMst_pid2], %% pridam ho do listu pre seba
+	%							Lbsr ! {self(), iAmEh, newSrList, SRList3, newMstPid, SrMst_pid2},
+	%							io:format("errorHandler: informoval som lbsr, novy srlist ~p, novy mst ~p ~n", [SRList3,SrMst_pid2] ),
+	%							loop(state1, Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid2,SRList3);
+	%						true ->
+	%							io:format("errorHandler: SRList nie je prazdny, spawnem noveho mastra, odovzdam mu dict~n"),
+	%							Lbsr ! {self(), iAmEh, giveDict},
+	%							receive
+	%								{Lbsr_pid, dict, Dict} ->
+	%									register(SrMst, SrMst_pid3 = spawn(fun() -> serviceRegister:start(master,Dict) end)),
+	%									io:format("errorHandler: restartoval som sr, jeho pid je ~p~n",[SrMst_pid3]),
+	%									link(SrMst_pid3),
+	%									SRList3 = SRList2 ++ [SrMst_pid3],
+	%									Lbsr ! {self(), iAmEh, newSrList, SRList3, newMstPid, SrMst_pid3},
+	%									io:format("errorHandler: informoval som lbsr, novy srlist ~p, novy mst ~p ~n", [SRList3,SrMst_pid3] ),
+	%									loop(state1, Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid3,SRList3)
+	%							end				
+	%			end;
 	
 
 		%% ch je dead

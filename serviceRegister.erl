@@ -13,13 +13,48 @@
 
 start(Mode, Dict) ->
 	io:format("serviceRegister ~p: nastartovany moje pid je ~p a moj mod je ~p~n", [self(),self(), Mode]),
+	if 
+		Mode =:= master ->
+			MyMonitor = serviceRegisterMonitor:start(sr);
+		true ->
+			MyMonitor = serviceRegisterMonitor:start(self())
+			
+	end,		
+	io:format("serviceRegister: moj monitor: ~p~n",[MyMonitor]),
 	%Dict = null,   %%%%% pri nastartovani este nei je ziadny dict s lbss
-	LbSrPid = null,
-	loop(Mode, Dict, LbSrPid).
+	%LbSrPid = null, %% !!!!!!!!!!!!!!!!! to mozem odtranit ak bude vzdy registrovany ako lbsr
+	if
+		%%% po rerstarte monitorom 
+		Dict =:= null ->
+			io:format("serviceRegister: mam dict null~n"),
+			lbsr ! {self(), giveDict},
+			receive
+				{Pid, dict, Dict2} ->
+					ok
+			after 5000 ->
+				io:format("serviceRegister: lbsr neodpoveda!~n"),
+				Dict2 =  null		
+			end;
+		true ->
+			io:format("serviceRegister: nemam dict null~n"),
+			Dict2 = Dict
+	end,
+	
+	if %% predstavi sa lbsr ze je master
+		Mode =:= master ->
+			io:format("serviceRegister~p: som master, predstavim sa lbsr~n",[self()]),
+			lbsr ! {self(), masterSR};
+		true ->	
+			io:format("serviceRegister~p: nie som master~n",[self()])
+	end,	
+	
+	io:format("serviceRegister: moj dict ~p~n",[Dict2]),
+	loop(Mode, Dict2).
+	
 
 
 
-loop(Mode, Dict, LbSrPid) ->
+loop(Mode, Dict) ->
 	receive 
 		%%% lbsr sa predstavuje, master mu odpovie svojim pid
 		{Pid, lbsr} ->
@@ -32,15 +67,15 @@ loop(Mode, Dict, LbSrPid) ->
 					io:format("serviceRegister ~p: ~p ni som master neodpovedam~n", [self(),self()])	
 
 			end,
-			LbSrPid2 = Pid,
-			loop(Mode, Dict, LbSrPid2);
+			%LbSrPid2 = Pid,
+			loop(Mode, Dict);
 		%% najdi lbss pre danu sluzbu (ServiceID) a posli jeho adresu workerovi ktory si ju ziada, kontorluje sa ci slovnik existuje   ???? upravit Pid na LbsrPid?
 		{Pid , findLbSs, ServiceId, WorkerPid} ->
 			io:format("serviceRegister~p: dostal som poziadavku pre najdenie lbss pre serviceID ~p pre workera ~p od lbsr ~p ~n", [self(),ServiceId, WorkerPid, Pid]),
 			if
 				Dict =:= null ->
 					io:format("serviceRegister: dictionary neexiustuje, nemozem najst LbSs ~n"),
-					loop(Mode, Dict, LbSrPid);
+					loop(Mode, Dict);
 				true ->
 					case
 						dict:is_key(ServiceId,Dict) of
@@ -49,11 +84,11 @@ loop(Mode, Dict, LbSrPid) ->
 							LbSsPid = findLbSs(ServiceId, Dict),
 							io:format("serviceRegister: lbss pre serviceID ~p je ~p~n", [ServiceId, LbSsPid]),
 							WorkerPid ! {self(), findLbSs, ServiceId, LbSsPid},
-							loop(Mode, Dict, LbSrPid);
+							loop(Mode, Dict);
 						false ->
 							io:format("serviceRegister: neplatny kluc service id~n"),
 							WorkerPid ! {self(), findLbSs, noSuchServiceId, null},
-							loop(Mode, Dict, LbSrPid)
+							loop(Mode, Dict)
 
 					end
 								
@@ -69,15 +104,15 @@ loop(Mode, Dict, LbSrPid) ->
 						Dict =:= null ->
 							Dict1 = createDictOfLbSs(),
 							io:format("serviceRegister: novy dict je ~p~n", [Dict1]),
-							loop(Mode, Dict1, LbSrPid);
+							loop(Mode, Dict1);
 						true ->
 								
 							io:format("serviceRegister: dictionary uz existuje, nevytvaram novy~n"),
-							loop(Mode, Dict, LbSrPid)	
+							loop(Mode, Dict)	
 					end;
 				true ->
 					io:format("serviceRegister: nie som master tak tento request nemozem vykonat~n"),
-					loop(Mode, Dict, LbSrPid)			
+					loop(Mode, Dict)			
 			end;
 
 		%% ukaze vsetky dostupne Id sluzieb -> kontorluje sa ci uz je nejaky slovnik vytvoreny	
@@ -86,11 +121,11 @@ loop(Mode, Dict, LbSrPid) ->
 			if
 					Dict =:= null ->
 						io:format("serviceRegister: dictionary este nebol vytvoreny~n"),
-						loop(Mode, Dict, LbSrPid);
+						loop(Mode, Dict);
 					true ->
 						showAllKeys(Dict),
 						io:format("serviceRegister: requerst vykonany ~n"),
-						loop(Mode, Dict, LbSrPid)				
+						loop(Mode, Dict)				
 			end;
 
 
@@ -100,11 +135,11 @@ loop(Mode, Dict, LbSrPid) ->
 			if
 					Dict =:= null ->
 						io:format("serviceRegister: dictionary este nebol vytvoreny~n"),
-						loop(Mode, Dict, LbSrPid);
+						loop(Mode, Dict);
 					true ->
 						showAllPairs(Dict),
 						io:format("serviceRegister: requerst vykonany ~n"),
-						loop(Mode, Dict, LbSrPid)				
+						loop(Mode, Dict)				
 			end;
 
 		%%% prida service id do dict , treba vytvorit lbss , kontorluje sa ci je master a ci uz existuje dict	
@@ -116,28 +151,28 @@ loop(Mode, Dict, LbSrPid) ->
 					if
 						Dict =:= null ->
 							io:format("serviceRegister: dictionary este nebol vytvoreny~n"),
-							loop(Mode, Dict, LbSrPid);
+							loop(Mode, Dict);
 						true ->
 							Dict1 = addServiceId(Dict, ServiceId),
 							io:format("serviceRegister: novy dict je ~p ~n", [Dict1]),
 							%%% informuje lbsr o zmene dict aby sa mohjli aktualizovat mirrors
-							LbSrPid ! {self(), newDict, Dict1},
-							loop(Mode, Dict1, LbSrPid)
+							lbsr ! {self(), newDict, Dict1},
+							loop(Mode, Dict1)
 					end;
 				true ->
 					io:format("serviceRegister: nie som master tak tento request nemozem vykonat~n"),
-					loop(Mode, Dict, LbSrPid)			
+					loop(Mode, Dict)			
 			end;
 		%%% informuj lbsr o dictionary, pri tom ako sa vytbvara mirror lbsr sa dozaduje o dict	
-		{LbSrPid, giveDict} ->
+		{_Pid, giveDict} ->
 			io:format("serviceRegister~p: dostal som ziadost give dictionary od lbsr~n",[self()]),
-			LbSrPid ! {self(), dict, Dict},
+			lbsr ! {self(), dict, Dict},
 			io:format("serviceRegister: poslal som dictionary~n"),
-			loop(Mode,Dict, LbSrPid);
+			loop(Mode,Dict);
 		%%%% aktualizacia mirror, dostal som od lbsr aktualny dict	
-		{LbSrPid, dict, Dict2} ->
+		{_Pid, dict, Dict2} ->
 			io:format("serviceRegister: ~p dostal som dictionary~n",[self()]),
-			loop(Mode, Dict2, LbSrPid);	
+			loop(Mode, Dict2);	
 		
 			%% kill signal
 		{die, Pid, Reason} ->
@@ -145,12 +180,12 @@ loop(Mode, Dict, LbSrPid) ->
 			exit(Reason);
 
 
-
+		{normal} -> io:format("serviceRegister: normal end~n");
 
 
 		Any ->
 			io:format("serviceRegister~p: unknown request ~p~n",[self(),Any]),
-			loop(Mode, Dict, LbSrPid)			
+			loop(Mode, Dict)			
 					
 	end.
 	

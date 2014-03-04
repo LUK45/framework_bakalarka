@@ -63,20 +63,21 @@ loop(SRList,MasterSrPid) ->
 		%% vytvor novy mirror service registra	
 		{addMirror,name,Name} ->
 			io:format("Lbsr: vytvor mirror~n"),
-			%% spawne novy proces so sr, mode normal -> nie master, dict zatial null, prida ho do listuSr, a predstavi sa mu
-			register(Name,NewSr = spawn(fun() -> serviceRegister:start(normal,null) end)),
-			SRList2 = SRList ++ [NewSr],
-			NewSr ! {self(), lbsr},
-			io:format("Lbsr: novy mirror je ~p a novy sr list je ~p~n", [NewSr, SRList2]),
 			%% poziada mastra o dict 
 			MasterSrPid ! {self(), giveDict},
 			receive 
 				{MasterSrPid, dict, Dict} ->
-					io:format("Lbsr: dostal som dictionary od mastra~n"),
-					NewSr ! {self(), dict, Dict}
+					io:format("Lbsr: dostal som dictionary od mastra~n")
 			end,
-			io:format("Lbsr: informujem Eh aby si nalinkoval noveho mirrora~n"),
-			eh ! {self(), iAmLbSr, linkThis, NewSr},
+			%% spawne novy proces so sr, mode normal -> nie master, dict zatial null, prida ho do listuSr, a predstavi sa mu
+			register(Name,NewSr = spawn(fun() -> serviceRegister:start(normal,Dict) end)),
+			SRList2 = SRList ++ [NewSr],
+			%NewSr ! {self(), lbsr},
+			io:format("Lbsr: novy mirror je ~p a novy sr list je ~p~n", [NewSr, SRList2]),
+			
+			
+			%io:format("Lbsr: informujem Eh aby si nalinkoval noveho mirrora~n"),
+			%eh ! {self(), iAmLbSr, linkThis, NewSr},
 			loop(SRList2,MasterSrPid);
 
 			%% kill signal
@@ -98,47 +99,58 @@ loop(SRList,MasterSrPid) ->
 			lists:foreach(fun(Pid) -> updateDict(Pid, MasterSrPid, Dict) end, SRList),
 			loop(SRList, MasterSrPid);
 
-		%% error handler si vyziadal sr list
+		%% error handler si vyziadal sr list !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 		{Pid, iAmEh, giveSrList} ->
 			io:format("loadBalancerSR: eh si vyziadal sr list ~n"),
 			Pid ! {self(), srList, SRList},
 			io:format("loadbalancerSR: poslal som sr list ku eh na pid: ~p~n", [Pid]),
 			loop(SRList, MasterSrPid);	
 
-			%% eh ma informuje ze srmst padol, treba ho vyradit zo srlist, poskytnut info pre eh aby mohol zvolit noveho srmst
-		{_Pid, iAmEh, srMstDown} ->
-			io:format("loadBalancerSR: eh ma informoval o pade srmst~n"),
+			%% sr monitor ma informuje ze srmst padol, treba ho vyradit zo srlist, poskytnut info pre eh aby mohol zvolit noveho srmst
+		{_Pid,  srMstDown} ->
+			io:format("loadBalancerSR: sr monitor ma informoval o pade srmst~n"),
 			SRList2 = lists:delete(MasterSrPid, SRList),
 			io:format("loadBalancerSR: socasny srlist bez mst je ~p~n",[SRList2]),
 
 			MasterSrPid2 = null,
 			loop(SRList2, MasterSrPid2);
 
-		%% eh si vypyta dict
-		{_Pid, iAmEh, giveDict} ->
+		%% novy master sr sa predstavil
+		{Pid , masterSR} -> 
+			io:format("loadBalancerSR: masterSrPid je ~p~n", [Pid]),
+			MasterSrPid2 = Pid,
+			SRList2 = SRList ++ [MasterSrPid2],
+			io:format("loadBalancerSR: new SRList ~p~n",[SRList2]),
+			loop(SRList2,MasterSrPid2);		
+
+		%% niekto si vypyta Dict 																	
+		{Pid, giveDict} ->
 			io:format("loadBalancerSR: eh si vypytal dict~n"),
 			SrPid = lists:last(SRList),
 			SrPid ! {self(), giveDict},
 			receive 
 				{SrPid, dict, Dict} ->
-					io:format("Lbsr: dostal som dictionary od ~p~n",[SrPid]),
-					eh ! {self(), dict, Dict}
+					io:format("Lbsr: dostal som dictionary od ~p ~p~n",[SrPid,Dict]),
+					Pid ! {self(), dict, Dict}
 			end,
 			loop(SRList, MasterSrPid);	
 
 
-		%% eh ma informuje o novom srliste a mst
+			
+
+
+		%% eh ma informuje o novom srliste a mst !!!!!!!!!!!!!!!!!!!!1
 		{_Pid, iAmEh, newSrList, NewSrList, newMstPid, SrMst_pid2} ->
 			SrMst_pid2 ! {self(), lbsr},
 			io:format("loadbalancerSR: eh ma informoval new srlist ~p, new mst ~p~n",[NewSrList, SrMst_pid2]),
 			loop(NewSrList,SrMst_pid2);	
 
-		%% eh ma informuje o novom srliste 
+		%% eh ma informuje o novom srliste !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 		{_Pid, iAmEh, newSrList, NewSrList} ->
 			io:format("loadbalancerSR: eh ma informoval new srlist ~p, ~n",[NewSrList]),
 			loop(NewSrList,MasterSrPid);	
 
-			%% eh ma informuje o novom srliste a mirr
+			%% eh ma informuje o novom srliste a mirr !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 		{_Pid, iAmEh, newSrList, NewSrList, newMirror, NewSr} ->
 			NewSr ! {self(), lbsr},
 			io:format("loadbalancerSR: eh ma informoval new srlist ~p, new mst ~p~n",[NewSrList, MasterSrPid]),
@@ -153,8 +165,8 @@ loop(SRList,MasterSrPid) ->
 
 %% aktualizuje diciotnary v replikach serivce registra
 updateDict(Pid, MasterSrPid, Dict) ->
-	if
-			Pid =/= MasterSrPid ->
+	if	
+		Pid =/= MasterSrPid ->
 				io:format("Lbsr: updatujem mirror ~p~n",[Pid]),
 				Pid ! {self(), dict, Dict};
 			true ->

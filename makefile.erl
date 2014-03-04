@@ -31,5 +31,10 @@ compile_core() ->
 	io:format("makefile: initModule.erl compiled~n~n"),
 	c:c(errorHandler),
 	io:format("makefile: errorHandler.erl compiled~n~n"),
+
+	c:c(serviceRegisterMonitor),
+	io:format("makefile: serviceRegisterMonitor.erl compiled~n~n"),
+
+
 		ok.
 	
