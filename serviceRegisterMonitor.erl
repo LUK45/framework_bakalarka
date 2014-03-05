@@ -25,7 +25,7 @@ loop(Ref) ->
 		{'DOWN',Ref, process, Master, Why} ->
 			io:format("serviceRegisterMonitor: padol sr master dovod ~p~n",[Why]),
 			lbsr ! {self(), srMstDown},
-			register(sr, _Pid = spawn(fun() -> serviceRegister:start(master,null) end));
+			register(sr, _Pid = spawn(fun() -> serviceRegister:start(master,null,[]) end));
 
 
 		%% mirror ukonceny 
@@ -37,7 +37,7 @@ loop(Ref) ->
 		{'DOWN',Ref, process, SrID, Why} -> 
 			io:format("serviceRegisterMonitor: padol sr  ~p dovod ~p, restartujem~n",[SrID,Why]),
 			lbsr ! {self(), mirrorDown, SrID},
-			spawn(fun() -> serviceRegister:start(normal,null) end);
+			spawn(fun() -> serviceRegister:start(normal,null,[]) end);
 
 		Any -> Any
 	end.	

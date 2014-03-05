@@ -4,7 +4,7 @@
 -export([spawn_worker/4, start/4]).
 
 
-%% start() -> gate ho takto startuje
+
 start(Session, Name, Lbsr_pid, Ch_pid) -> 
 	io:format("workerspawner: nastartovany , moje pid je ~p~n", [self()]),
 	spawn_worker(Session, Name, Lbsr_pid, Ch_pid).

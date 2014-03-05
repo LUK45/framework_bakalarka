@@ -18,7 +18,7 @@ io:format("===========================================================~ninitModu
 	%% service registrer start v mode master, dict null
 	%register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,null) end)),
 	Dict = dict:new(),
-	register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,Dict) end)),
+	register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,Dict,[self()]) end)),
 
 	%% load balancer pre service regisre start
 	SrList = [],

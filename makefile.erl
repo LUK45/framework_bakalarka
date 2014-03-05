@@ -35,6 +35,9 @@ compile_core() ->
 	c:c(serviceRegisterMonitor),
 	io:format("makefile: serviceRegisterMonitor.erl compiled~n~n"),
 
+	c:c(loadBalancerSRMonitor),
+	io:format("makefile: loadBalancerSRMonitor.erl compiled~n~n"),
+
 
 		ok.
 	

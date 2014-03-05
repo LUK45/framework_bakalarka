@@ -40,7 +40,7 @@ loop(Lbsr_pid, Ch_pid,Timer_pid, Ws_Pid) ->
 		%%%% poziadavka pre lbsr aby mi dal sr	
 		{findSR} ->
 			io:format("worker: vyziadam si SR od load balanceraSR ~n"),
-			Lbsr_pid ! {self(), findSR},
+			lbsr ! {self(), findSR},
 			loop(Lbsr_pid, Ch_pid,Timer_pid, Ws_Pid);
 		%%% odpoved od lbsr s asdresou sr	
 		{Lbsr_pid, findSR, ServiceRegisterPid} ->
@@ -50,7 +50,7 @@ loop(Lbsr_pid, Ch_pid,Timer_pid, Ws_Pid) ->
 		%%%% poziadavaka pre lbsr aby nasiel lbss pre konkretnu sluizbu
 		{findLbSs, ServiceId} ->
 			io:format("worker: vyziadam si od sr cez lbsr lbss pre service id ~p ~n", [ServiceId]),
-			Lbsr_pid ! {self(), findLbSs, ServiceId},
+			lbsr ! {self(), findLbSs, ServiceId},
 			loop(Lbsr_pid, Ch_pid,Timer_pid, Ws_Pid);
 		%%%% ocakavam odpoved s lbssPId	
 		{ServiceRegisterPid, findLbSs, ServiceId, LbSsPid} ->
