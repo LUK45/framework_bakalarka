@@ -45,7 +45,8 @@ start(Mode, Dict) ->
 			io:format("serviceRegister~p: som master, predstavim sa lbsr~n",[self()]),
 			lbsr ! {self(), masterSR};
 		true ->	
-			io:format("serviceRegister~p: nie som master~n",[self()])
+			lbsr ! {self(), newMirror},
+			io:format("serviceRegister~p: som mirror, predstavim sa lbsr~n",[self()])
 	end,	
 	
 	io:format("serviceRegister: moj dict ~p~n",[Dict2]),

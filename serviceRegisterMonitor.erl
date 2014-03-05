@@ -30,20 +30,17 @@ loop(Ref) ->
 
 		%% mirror ukonceny 
 		{'DOWN',Ref, process, SrID, normal} -> 
-			io:format("serviceRegisterMonitor: padol sr  ~p dovod ~p~n",[SrID,normal]),
-			loop(Ref);
+			io:format("serviceRegisterMonitor: ukonceny sr  ~p dovod ~p~n",[SrID,normal]);
 
 
 		%%padol mirror 
 		{'DOWN',Ref, process, SrID, Why} -> 
-			io:format("serviceRegisterMonitor: padol sr  ~p dovod ~p~n",[SrID,Why]),
-			loop(Ref);
+			io:format("serviceRegisterMonitor: padol sr  ~p dovod ~p, restartujem~n",[SrID,Why]),
+			lbsr ! {self(), mirrorDown, SrID},
+			spawn(fun() -> serviceRegister:start(normal,null) end);
 
 		Any -> Any
 	end.	
-
-
-
 
 
 	

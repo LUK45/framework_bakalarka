@@ -61,7 +61,7 @@ loop(SRList,MasterSrPid) ->
 		
 
 		%% vytvor novy mirror service registra	
-		{addMirror,name,Name} ->
+		{addMirror} ->
 			io:format("Lbsr: vytvor mirror~n"),
 			%% poziada mastra o dict 
 			MasterSrPid ! {self(), giveDict},
@@ -70,7 +70,7 @@ loop(SRList,MasterSrPid) ->
 					io:format("Lbsr: dostal som dictionary od mastra~n")
 			end,
 			%% spawne novy proces so sr, mode normal -> nie master, dict zatial null, prida ho do listuSr, a predstavi sa mu
-			register(Name,NewSr = spawn(fun() -> serviceRegister:start(normal,Dict) end)),
+			NewSr = spawn(fun() -> serviceRegister:start(normal,Dict) end),
 			SRList2 = SRList ++ [NewSr],
 			%NewSr ! {self(), lbsr},
 			io:format("Lbsr: novy mirror je ~p a novy sr list je ~p~n", [NewSr, SRList2]),
@@ -115,13 +115,43 @@ loop(SRList,MasterSrPid) ->
 			MasterSrPid2 = null,
 			loop(SRList2, MasterSrPid2);
 
+		% sr monitor informuje o pade sr mirror	
+		{_Pid, mirrorDown, SrID} ->
+			io:format("loadBalancerSR: sr monitor ma informoval o pade sr mirror~n"),
+			SRList2 = lists:delete(SrID, SRList),
+			io:format("loadBalancerSR: socasny srlist je ~p~n",[SRList2]),
+			loop(SRList2, MasterSrPid);
+
+
 		%% novy master sr sa predstavil
 		{Pid , masterSR} -> 
 			io:format("loadBalancerSR: masterSrPid je ~p~n", [Pid]),
 			MasterSrPid2 = Pid,
-			SRList2 = SRList ++ [MasterSrPid2],
+			case lists:member(Pid,SRList) of
+				true ->
+					io:format("loadbalancerSR: ~p uz bol v liste, nepridavam~n",[Pid]),
+					SRList2 = SRList;
+				false ->
+					io:format("loadbalancerSR: ~p nebol v liste, pridavam~n",[Pid]),
+					SRList2 = SRList ++ [MasterSrPid2]			
+			end,
+			
 			io:format("loadBalancerSR: new SRList ~p~n",[SRList2]),
 			loop(SRList2,MasterSrPid2);		
+
+		%% novy sr mirror sa predstavil
+		{Pid , newMirror} -> 
+			io:format("loadBalancerSR: new mirror je ~p~n", [Pid]),
+			case lists:member(Pid,SRList) of
+				true ->
+					io:format("loadbalancerSR: ~p uz bol v liste, nepridavam~n",[Pid]),
+					SRList2 = SRList;
+				false ->
+					io:format("loadbalancerSR: ~p nebol v liste, pridavam~n",[Pid]),
+					SRList2 = SRList ++ [Pid]			
+			end,
+			io:format("loadBalancerSR: new SRList ~p~n",[SRList2]),
+			loop(SRList2,MasterSrPid);		
 
 		%% niekto si vypyta Dict 																	
 		{Pid, giveDict} ->
