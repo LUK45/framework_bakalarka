@@ -1,250 +1,126 @@
+
 -module(loadBalancerSR).
+%% gen_server_mini_template
+-behaviour(gen_server).
 
--export([start/1]).
+-export([start_link/1, find_LbSs/3, addMirror/1, giveSRList/1, giveServicesDict/1]).
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+terminate/2, code_change/3]).
 
 
-%%% moudl LB SR -> load balancer pre service registre
 
-start(SRList) ->
-io:format("loadbalancerSR: nastartovany , moje pid je ~p~n", [self()]),
-	%SRList = [s1,s2,s3,s4],
+start_link(State) -> gen_server:start_link(?MODULE, State, []).
 
-	MyMonitor = loadBalancerSRMonitor:start(self()), 
-	io:format("loadbalancerSR: moj monitor ~p~n",[MyMonitor]),
-	%%% predstavi sa vsetkym sr, a caka odpoved od mastra aby vedel jeho pid
-	case SRList of
-		[] -> % pri prvom spusteni
-			io:format("loadbalancerSR: mam prazdny list sr~n"),
-			MasterSrPid = null,
-			SRList2 = SRList;
-		null -> %pri restarte
-			sr ! {self(), giveSRList},
-			receive	
-				{MasterSrPid, srList, SRList2} -> ok
 
-			after 5000 ->
-				io:format("loadbalancerSR: sr master neodpoveda~n"),
-				MasterSrPid = null,
-				SRList2 = SRList
-			end		
-				
+init(State) -> 
+	io:format("lbsr~p: init ~p ~n",[self(),State]),
 
+	SRL = dict:fetch(srList, State),
+	if
+		SRL =:= null ->
+			SRL2 = serviceRegister:giveSRList(sr);
+		true ->
+			SRL2 = SRL
 	end,
 
-	%if
-	%	SRList =:= [] ->
-	%		io:format("loadbalancerSR: mam prazdny list sr~n"),
-	%		MasterSrPid = null;
-	%	true ->
-	io:format("loadBalancerSR: srlist je ~p~n",[SRList2]),
-	lists:foreach(fun(Pid) ->  Pid ! {self(), lbsr} end, SRList2),
-		
-	%end,
-
-	
-			
-	loop(SRList2, MasterSrPid, MyMonitor).
+	%pridat onitor
+	State2 = dict:erase(srList, State),
+	State3 = dict:store(srList, SRL2,State2),
+	io:format("lbsr~p: my state: ~p~n",[self(), State3]),
+	{ok, State3}.
 
 
-%%%% pridat service register
-%% obsluhuje sprava {addMirror}
-%addServiceRegister() -> void.
+addMirror(Pid) -> gen_server:cast(Pid, {addMirror}).
+
+find_LbSs(Pid,ServiceId,WorkerPid) -> 
+	io:format("lbsr~p: findlbss ~p~n",[self(), ServiceId]),
+	gen_server:call(Pid, {find_LbSs, ServiceId,WorkerPid}).
+
+giveSRList(Pid) -> gen_server:call(Pid, {giveSRList}).
+
+giveServicesDict(Pid) -> gen_server:call(Pid,{giveServicesDict}).
 
 
 
+%% gen_server callbacks.........................................................................................
+
+handle_call({giveServicesDict} , _From, State) ->
+	SRList = getSRListFromState(srList,State),
+	{SRpid,SRList2} = loadBalancerRoundRobin:selectServer(SRList),
+	State1= dict:erase(srList,State),
+	State2 = dict:store(srList,SRList2,State1),	
+	Reply = serviceRegister:giveServicesDict(SRpid),
+	{reply,Reply, State2};
 
 
-%%%%%% loop s argumentom listom dostuypnych serivec registrov -> zatial provizorne
-loop(SRList, MasterSrPid, MyMonitor) ->
-	%io:format("********************~n"),
-	receive 
-		%%% ziskaj adresu service registra -> toto sa vo fdinale nebude pouzivat 
-		{Pid, findSR} ->
-			{SrPid, SRList2, _St} = loadBalancerRoundRobin:selectServer(SRList,state),
-			Pid ! {self(), findSR, SrPid},
-			loop(SRList2, MasterSrPid, MyMonitor);
-		%%% ziskaj adresu load balancera pre servery konktretnej sluzby
-		{WorkerPid, findLbSs, ServiceId} ->
-			io:format("Lbsr: dostal som poziadavku pre zistenie adresy lbss pre sluzbu s id ~p -> kontaktujem sr~n", [ServiceId]),
-			if
-				SRList =:= [] ->
-					io:format("loadBalancerSR: srlist je prazdny, nemozem obluszit poziadavu~n"),
-					WorkerPid ! {self(), noSr},
-					loop(SRList, MasterSrPid, MyMonitor);
+handle_call({giveSRList}, From, State) ->
+	SRL = dict:fetch(srList,State),
+	case lists:member(From,SRL) of
 				true ->
-					{SrPid, SRList2, _St} = loadBalancerRoundRobin:selectServer(SRList,state),
-					SrPid ! {self(), findLbSs, ServiceId, WorkerPid},
-					loop(SRList2, MasterSrPid, MyMonitor)	
-			end;
-			
-		%%% ocakava odpoved ???? zatial druha varianta -> vid progerssslod day2 -> zatial neocakava	
-
-		
-
-		%% vytvor novy mirror service registra	
-		{addMirror} ->
-			io:format("Lbsr: vytvor mirror~n"),
-			%% poziada mastra o dict 
-			MasterSrPid ! {self(), giveDict},
-			receive 
-				{MasterSrPid, dict, Dict} ->
-					io:format("Lbsr: dostal som dictionary od mastra~n")
-			end,
-			%% spawne novy proces so sr, mode normal -> nie master, dict zatial null, prida ho do listuSr, a predstavi sa mu
-			NewSr = spawn(fun() -> serviceRegister:start(normal,Dict,[]) end),
-			SRList2 = SRList ++ [NewSr],
-			%NewSr ! {self(), lbsr},
-			io:format("Lbsr: novy mirror je ~p a novy sr list je ~p~n", [NewSr, SRList2]),
-			updateSrList(SRList2),
-			
-			%io:format("Lbsr: informujem Eh aby si nalinkoval noveho mirrora~n"),
-			%eh ! {self(), iAmLbSr, linkThis, NewSr},
-			loop(SRList2, MasterSrPid, MyMonitor);
-
-			%% kill signal
-		{die, Pid, Reason} ->
-			io:format("Lbsr: prijal som die signal od ~p~n", [Pid]),
-			exit(Reason);	
-
-			%% niekto si vypytal srlist
-		{Pid, giveSRList} ->
-			io:format("loadBalancerSR: ~p si vypytal srlist~n",[Pid]),
-			case lists:member(Pid,SRList) of
-				true ->
-					io:format("loadbalancerSR: ~p uz bol v liste, nepridavam~n",[Pid]),
-					SRList2 = SRList;
+					io:format("loadbalancerSR~p: ~p uz bol v liste, nepridavam~n",[self(), From]),
+					SRL2 = SRL;
 				false ->
-					io:format("loadbalancerSR: ~p nebol v liste, pridavam~n",[Pid]),
-					SRList2 = SRList ++ [Pid]			
-			end,
-			Pid ! {self(), srList, SRList2},
-			loop(SRList2, MasterSrPid, MyMonitor);	
+					io:format("loadbalancerSR~p: ~p nebol v liste, pridavam~n",[self(),From]),
+					SRL2 = SRL ++ [From]			
+	end,
+	Reply = SRL2,
+	State1= dict:erase(srList,State),
+	State2 = dict:store(srList,SRL2,State1),	
+	{reply, Reply, State2};
 
 
-		%%% skusobne skontaktovanie eh  ----ok
-		{contactEH} ->
-			io:format("loadBalancerSR: kontaktujem eh~n"),
-			eh ! {self(),iAmLbSr},
-			loop(SRList, MasterSrPid, MyMonitor);	
+handle_call({find_LbSs,ServiceId,WorkerPid} , _From, State) ->
+	%io:format("lbsr: handle~n"), 
+	SRList = getSRListFromState(srList,State),
+	%io:format(";lbsr ~p~n",[SRList]),
+	{SRpid,SRList2} = loadBalancerRoundRobin:selectServer(SRList),
+	%io:format("lbsr~p: ~p~n",[self(),SRpid]),
+	%State2 = updateStateSRList(srList, fun(V) -> V=SRList2 end, State),
+	State1= dict:erase(srList,State),
+	State2 = dict:store(srList,SRList2,State1),	
+	Reply = serviceRegister:find_LbSs(SRpid,ServiceId,WorkerPid),
+	{reply,Reply, State2};
+
+
+handle_call(_Request, _From, State) -> {reply, reply,State}.
 
 
 
-		%%% zmienil sa dict -> aktualizovat mirrors	
-		{MasterSrPid, newDict, Dict} ->	
-			lists:foreach(fun(Pid) -> updateDict(Pid, MasterSrPid, Dict) end, SRList),
-			loop(SRList, MasterSrPid, MyMonitor);
+handle_cast({addMirror}, State) ->
 
-		%% error handler si vyziadal sr list !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-		{Pid, iAmEh, giveSrList} ->
-			io:format("loadBalancerSR: eh si vyziadal sr list ~n"),
-			Pid ! {self(), srList, SRList},
-			io:format("loadbalancerSR: poslal som sr list ku eh na pid: ~p~n", [Pid]),
-			loop(SRList, MasterSrPid, MyMonitor);	
+	SRList = getSRListFromState(srList,State),
+	{SRpid,SRList2} = loadBalancerRoundRobin:selectServer(SRList),
+	Dict= serviceRegister:giveServicesDict(SRpid),
 
-			%% sr monitor ma informuje ze srmst padol, treba ho vyradit zo srlist, poskytnut info pre eh aby mohol zvolit noveho srmst
-		{_Pid,  srMstDown} ->
-			io:format("loadBalancerSR: sr monitor ma informoval o pade srmst~n"),
-			SRList2 = lists:delete(MasterSrPid, SRList),
-			io:format("loadBalancerSR: socasny srlist bez mst je ~p~n",[SRList2]),
+	SRState = dict:store(mode, normal, dict:new()),
+	SRState2 = dict:store(dict, Dict,SRState),
+	SRState3 = dict:store(srList, newMirror, SRState2),
+	{ok, NewSRPid} = serviceRegister:start_link(SRState3),
 
-			MasterSrPid2 = null,
-			loop(SRList2, MasterSrPid2, MyMonitor);
+	SRList3 = SRList2 ++ [NewSRPid],
+	State1= dict:erase(srList,State),
+	State2 = dict:store(srList,SRList3,State1),	
 
-		% sr monitor informuje o pade sr mirror	
-		{_Pid, mirrorDown, SrID} ->
-			io:format("loadBalancerSR: sr monitor ma informoval o pade sr mirror~n"),
-			SRList2 = lists:delete(SrID, SRList),
-			io:format("loadBalancerSR: socasny srlist je ~p~n",[SRList2]),
-			loop(SRList2, MasterSrPid, MyMonitor);
+	informSRList(SRList3),
+
+	{noreply, State2};	
 
 
-		%% novy master sr sa predstavil
-		{Pid , masterSR} -> 
-			io:format("loadBalancerSR: masterSrPid je ~p~n", [Pid]),
-			MasterSrPid2 = Pid,
-			case lists:member(Pid,SRList) of
-				true ->
-					io:format("loadbalancerSR: ~p uz bol v liste, nepridavam~n",[Pid]),
-					SRList2 = SRList;
-				false ->
-					io:format("loadbalancerSR: ~p nebol v liste, pridavam~n",[Pid]),
-					SRList2 = SRList ++ [MasterSrPid2]			
-			end,
-			
-			io:format("loadBalancerSR: new SRList ~p~n",[SRList2]),
-			loop(SRList2, MasterSrPid2, MyMonitor);		
+handle_cast(_Msg, State) -> {noreply, State}.
+handle_info(_Info, State) -> {noreply, State}.
+terminate(_Reason, _State) -> ok.
+code_change(_OldVsn, State, Extra) -> {ok, State}.
 
-		%% novy sr mirror sa predstavil
-		{Pid , newMirror} -> 
-			io:format("loadBalancerSR: new mirror je ~p~n", [Pid]),
-			case lists:member(Pid,SRList) of
-				true ->
-					io:format("loadbalancerSR: ~p uz bol v liste, nepridavam~n",[Pid]),
-					SRList2 = SRList;
-				false ->
-					io:format("loadbalancerSR: ~p nebol v liste, pridavam~n",[Pid]),
-					SRList2 = SRList ++ [Pid]			
-			end,
-			io:format("loadBalancerSR: new SRList ~p~n",[SRList2]),
-			loop(SRList2, MasterSrPid, MyMonitor);		
+%% other .................................................................................
 
-		%% niekto si vypyta Dict 																	
-		{Pid, giveDict} ->
-			io:format("loadBalancerSR: eh si vypytal dict~n"),
-			SrPid = lists:last(SRList),
-			SrPid ! {self(), giveDict},
-			receive 
-				{SrPid, dict, Dict} ->
-					io:format("Lbsr: dostal som dictionary od ~p ~p~n",[SrPid,Dict]),
-					Pid ! {self(), dict, Dict}
-			end,
-			loop(SRList, MasterSrPid, MyMonitor);	
+getSRListFromState(Key, Dict) ->
+	SRList = dict:fetch(Key, Dict),
+	SRList.	
 
-			%% padol mi monitor
-		{'DOWN', MyMonitor, process, Pid, Reason} ->
-			io:format("loadBalancerSR: padol mi monitor ~p ~p, restartujem ~n",[Pid, Reason]),
-			MyMonitor2 = loadBalancerSRMonitor:start(self()),
-			loop(SRList, MasterSrPid, MyMonitor2);				
+updateStateSRList(Key,Fun,Dict) ->
+	Dict2  = dict:update(Key, Fun, Dict),
+	Dict2.
 
-
-			
-
-
-		%% eh ma informuje o novom srliste a mst !!!!!!!!!!!!!!!!!!!!1
-		%{_Pid, iAmEh, newSrList, NewSrList, newMstPid, SrMst_pid2} ->
-		%	SrMst_pid2 ! {self(), lbsr},
-		%	io:format("loadbalancerSR: eh ma informoval new srlist ~p, new mst ~p~n",[NewSrList, SrMst_pid2]),
-		%	loop(NewSrList,SrMst_pid2);	
-
-		%% eh ma informuje o novom srliste !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-		%{_Pid, iAmEh, newSrList, NewSrList} ->
-		%	io:format("loadbalancerSR: eh ma informoval new srlist ~p, ~n",[NewSrList]),
-		%	loop(NewSrList,MasterSrPid);	
-
-			%% eh ma informuje o novom srliste a mirr !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-		%{_Pid, iAmEh, newSrList, NewSrList, newMirror, NewSr} ->
-		%	NewSr ! {self(), lbsr},
-		%	io:format("loadbalancerSR: eh ma informoval new srlist ~p, new mst ~p~n",[NewSrList, MasterSrPid]),
-		%	loop(NewSrList,MasterSrPid);		
-
-		Any ->
-			io:format("loadBalancerSR: prijal som ~p ~n", [Any]),
-			loop(SRList, MasterSrPid, MyMonitor)	
-
-	end.		
-
-
-%% aktualizuje diciotnary v replikach serivce registra
-updateDict(Pid, MasterSrPid, Dict) ->
-	if	
-		Pid =/= MasterSrPid ->
-				io:format("Lbsr: updatujem mirror ~p~n",[Pid]),
-				Pid ! {self(), dict, Dict};
-			true ->
-				io:format("Lbsr: toto je master ~p neupdatujem mu dict~n", [Pid])	
-	end.	
-
-updateSrList(SRList) ->
-	io:format("loadBalancerSR: informujem SR list o novom mirror~n"),
-	lists:foreach(fun(Pid) -> Pid ! {self(), srList, SRList} end, SRList).
-
+informSRList(SRL) -> 
+	lists:foreach(fun(Pid) -> serviceRegister:newSrList(Pid,SRL) end, SRL).

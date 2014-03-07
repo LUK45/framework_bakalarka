@@ -1,265 +1,136 @@
 -module(serviceRegister).
+%% gen_server_mini_template
+-behaviour(gen_server).
 
--compile(export_all).
+-export([start_link/1,find_LbSs/3,addService/2,giveSRList/1,newDict/2,
+		newSrList/2,giveServicesDict/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+terminate/2, code_change/3]).
 
 
-%%%% service register 
-%% adresy laod balancerov ... 
-%%% kazdy ma svoj status -> master / normal
-%%% master -> pridava odobera lbss / spravuje repliky
+start_link(Dict) -> gen_server:start_link(?MODULE, Dict, []).
 
 
+init(D2) -> 
+	%D2 = dict:store(srList, [self()], Dict),
+	io:format("serviceRegister~p: ~n~p~n",[self(), D2]),
 
-
-start(Mode, Dict, SRList) ->
-	io:format("serviceRegister ~p: nastartovany moje pid je ~p a moj mod je ~p~n", [self(),self(), Mode]),
-	if 
-		Mode =:= master ->
-			MyMonitor = serviceRegisterMonitor:start(sr);
-		true ->
-			MyMonitor = serviceRegisterMonitor:start(self())
-			
-	end,		
-	io:format("serviceRegister: moj monitor: ~p~n",[MyMonitor]),
-	%Dict = null,   %%%%% pri nastartovani este nei je ziadny dict s lbss
-	%LbSrPid = null, %% !!!!!!!!!!!!!!!!! to mozem odtranit ak bude vzdy registrovany ako lbsr
+	ServicesDict = dict:fetch(dict,D2),
 	if
-		%%% po rerstarte monitorom 
-		Dict =:= null ->
-			io:format("serviceRegister: mam dict null~n"),
-			lbsr ! {self(), giveDict},
-			receive
-				{Pid, dict, Dict2} ->
-					ok
-			after 5000 ->
-				io:format("serviceRegister: lbsr neodpoveda!~n"),
-				Dict2 =  null		
-			end;
+		ServicesDict =:= null ->
+			io:format("serviceRegister~p: mam dict null~n",[self()]),
+			ServicesDict2 = loadBalancerSR:giveServicesDict(lbsr);
 		true ->
-			io:format("serviceRegister: nemam dict null~n"),
-			Dict2 = Dict
+			io:format("serviceRegister~p: nemam dict null~n",[self()]),
+			ServicesDict2 = ServicesDict
 	end,
 
-	if 	%% ked sa spawne novy sr ma prazdny list, vypyta si ho, vynimka je ked sa spusta prvy krat master, ten pozna seba
-		SRList =:= [] ->
-			io:format("serviceRegister~p: pytam si srlist od lbsr~n",[self()]),
-			lbsr ! {self(), giveSRList},
-			receive
-				{Pid2, srList, SRList2} -> ok
-			after 5000 ->
-				io:format("serviceRegister: lbsr neodpoveda!~n"),
-				SRList2 = SRList
-			end;
+	D3 = dict:erase(dict,D2),
+	D4 = dict:store(dict,ServicesDict2,D3),
+    
+    Mode = dict:fetch(mode, D4),
+    SRL = dict:fetch(srList, D4),
+    if
+    	SRL =:= null ->
+    		SRL2 = loadBalancerSR:giveSRList(lbsr);
+    	SRL =:= newMirror ->
+    		SRL2 = SRL;	
+    	true ->
+    		SRL2 = [self()]		
+    end,
+
+	
+	D5 = dict:store(srList, SRL2, D4),
+
+	io:format("serviceRegister~p: ~n~p~n",[self(), D5]),
+	State = D5,
+	{ok, State}.
+
+addService(Pid, ServiceId) -> gen_server:cast(Pid, {addService,ServiceId}).
+
+giveSRList(Pid) -> gen_server:call(Pid,{giveSRList}).	
+
+newSrList(Pid,SRL) -> gen_server:cast(Pid, {newSrList,SRL}).
+
+newDict(Pid, Dict) -> gen_server:cast(Pid, {newDict, Dict}).
+
+find_LbSs(Pid, ServiceId, WorkerPid) -> gen_server:call(Pid, {find_LbSs, ServiceId, WorkerPid}).
+
+giveServicesDict(Pid) -> gen_server:call(Pid,{giveServicesDict}).
+
+
+
+%% gen_server callbacks.........................................................................................
+
+handle_call({giveServicesDict} , _From, State) ->
+	Reply = dict:fetch(dict, State),
+	{reply,Reply, State};
+
+
+
+handle_call({giveSRList}, _From, State) ->
+	Reply = dict:fetch(srList,State),
+	{reply, Reply, State};
+
+handle_call({find_LbSs, ServiceId, WorkerPid}, _From, State) -> 
+	Reply = dict:fetch(ServiceId, dict:fetch(dict,State)),
+	io:format("serviceRegister~p: posielam ~p ako lbss pre ~p~n",[self(), Reply, ServiceId]),
+	{reply, Reply, State};
+
+
+handle_call(_Request, _From, State) -> {reply, reply, State}.
+
+handle_cast({addService, ServiceId}, State) ->
+	Mode = dict:fetch(mode,State),
+	if
+		 Mode =:= master ->
+			Dict1 = addServiceId(dict:fetch(dict,State), ServiceId),
+			%loadBalancerSR:newDict(lbsr,Dict1);
+			informSRList(Dict1, dict:fetch(srList,State)),
+			State1 = dict:erase(dict,State),
+			State2 = dict:store(dict,Dict1,State1);
+
 		true ->
-			SRList2 = SRList			
-
+			io:format("sr~p: nie som master, nemozem pridat sluzbu~n",[self()]),
+			State2 = State	
 	end,
-	
-	if %% predstavi sa lbsr ze je master
-		Mode =:= master ->
-			io:format("serviceRegister~p: som master, predstavim sa lbsr~n",[self()]),
-			lbsr ! {self(), masterSR};
-		true ->	
-			lbsr ! {self(), newMirror},
-			io:format("serviceRegister~p: som mirror, predstavim sa lbsr~n",[self()])
-	end,	
-	
-	io:format("serviceRegister: moj dict ~p~n a moj srlist~p ~n",[Dict2,SRList2]),
-	loop(Mode, Dict2, MyMonitor,SRList2).
+	{noreply, State2};
+
+handle_cast({newSrList,SRL}, State) ->
+	State1= dict:erase(srList,State),
+	State2 = dict:store(srList,SRL,State1),
+	{noreply,State2};	
 	
 
 
+handle_cast({newDict, Dict}, State) ->
+	State1= dict:erase(dict,State),
+	State2 = dict:store(dict,Dict,State1),
+	{noreply,State2};	
 
-loop(Mode, Dict, MyMonitor,SRList) ->
-	receive 
-		%%% lbsr sa predstavuje, master mu odpovie svojim pid
-		{Pid, lbsr} ->
-			io:format("serviceRegister ~p: som ~p dostal som spravu lbsr od ~p~n", [self(),self(),Pid]),
-			if
-				Mode =:= master ->
-					Pid ! {self(), masterSR},
-					io:format("serviceRegister ~p: ~p som master odpovedal som ~n", [self(),self()]);
-				true ->
-					io:format("serviceRegister ~p: ~p ni som master neodpovedam~n", [self(),self()])	
-
-			end,
-			%LbSrPid2 = Pid,
-			loop(Mode, Dict, MyMonitor,SRList);
-		%% najdi lbss pre danu sluzbu (ServiceID) a posli jeho adresu workerovi ktory si ju ziada, kontorluje sa ci slovnik existuje   ???? upravit Pid na LbsrPid?
-		{Pid , findLbSs, ServiceId, WorkerPid} ->
-			io:format("serviceRegister~p: dostal som poziadavku pre najdenie lbss pre serviceID ~p pre workera ~p od lbsr ~p ~n", [self(),ServiceId, WorkerPid, Pid]),
-			if
-				Dict =:= null ->
-					io:format("serviceRegister: dictionary neexiustuje, nemozem najst LbSs ~n"),
-					loop(Mode, Dict, MyMonitor,SRList);
-				true ->
-					case
-						dict:is_key(ServiceId,Dict) of
-						true ->
-							io:format("serviceRegister: platny kluc service id~n"),
-							LbSsPid = findLbSs(ServiceId, Dict),
-							io:format("serviceRegister: lbss pre serviceID ~p je ~p~n", [ServiceId, LbSsPid]),
-							WorkerPid ! {self(), findLbSs, ServiceId, LbSsPid},
-							loop(Mode, Dict, MyMonitor,SRList);
-						false ->
-							io:format("serviceRegister: neplatny kluc service id~n"),
-							WorkerPid ! {self(), findLbSs, noSuchServiceId, null},
-							loop(Mode, Dict, MyMonitor,SRList)
-
-					end
-								
-			end;			
-
-		%% vytore novy dict s lbss -> moze iba master -> kontroluje sa mode a to ci uz dict neexistuje	
-		{createDict} ->
-			io:format("serviceRegister: request z consoly na vytvorenie noveho dictionary~n"),
-			if
-				Mode =:= master ->
-					io:format("serviceRegister: som master a mozem vykonat tento request ~n"),
-					if
-						Dict =:= null ->
-							Dict1 = createDictOfLbSs(),
-							io:format("serviceRegister: novy dict je ~p~n", [Dict1]),
-							loop(Mode, Dict1, MyMonitor,SRList);
-						true ->
-								
-							io:format("serviceRegister: dictionary uz existuje, nevytvaram novy~n"),
-							loop(Mode, Dict, MyMonitor,SRList)	
-					end;
-				true ->
-					io:format("serviceRegister: nie som master tak tento request nemozem vykonat~n"),
-					loop(Mode, Dict, MyMonitor,SRList)			
-			end;
-
-		%% ukaze vsetky dostupne Id sluzieb -> kontorluje sa ci uz je nejaky slovnik vytvoreny	
-		{showServiceIds} ->
-			io:format("serviceRegister: request z consoly na vypisanie vsetkych klucov -> seriveIDs~n"),
-			if
-					Dict =:= null ->
-						io:format("serviceRegister: dictionary este nebol vytvoreny~n"),
-						loop(Mode, Dict, MyMonitor,SRList);
-					true ->
-						showAllKeys(Dict),
-						io:format("serviceRegister: requerst vykonany ~n"),
-						loop(Mode, Dict, MyMonitor,SRList)				
-			end;
-
-			%% lbsr si pyta srlist
-		{Pid, giveSRList} ->
-			io:format("serviceRegister~p: ~p si pyta srlist~n",[self(), Pid]),
-			Pid ! {self(), srList, SRList},
-			loop(Mode, Dict, MyMonitor, SRList);	
-
-		%% ukaze vsetky pary sluzba - lbss -> kontorluje sa ci uz je nejaky slovnik vytvoreny	
-		{showAllPairs} ->
-			io:format("serviceRegister: request z consoly na vypisanie vsetkych parov sluzba - load balancer~n"),
-			if
-					Dict =:= null ->
-						io:format("serviceRegister: dictionary este nebol vytvoreny~n"),
-						loop(Mode, Dict, MyMonitor,SRList);
-					true ->
-						showAllPairs(Dict),
-						io:format("serviceRegister: requerst vykonany ~n"),
-						loop(Mode, Dict, MyMonitor,SRList)				
-			end;
-
-		%%% prida service id do dict , treba vytvorit lbss , kontorluje sa ci je master a ci uz existuje dict	
-		{addService, ServiceId} ->
-			io:format("serviceRegister: request z consoly na pridanie novej sluzby~n"),
-			if
-				Mode =:= master ->
-					io:format("serviceRegister: som master a mozem vykonat tento request ~n"),
-					if
-						Dict =:= null ->
-							io:format("serviceRegister: dictionary este nebol vytvoreny~n"),
-							loop(Mode, Dict, MyMonitor,SRList);
-						true ->
-							Dict1 = addServiceId(Dict, ServiceId),
-							io:format("serviceRegister: novy dict je ~p ~n", [Dict1]),
-							%%% informuje lbsr o zmene dict aby sa mohjli aktualizovat mirrors
-							lbsr ! {self(), newDict, Dict1},
-							loop(Mode, Dict1, MyMonitor,SRList)
-					end;
-				true ->
-					io:format("serviceRegister: nie som master tak tento request nemozem vykonat~n"),
-					loop(Mode, Dict, MyMonitor,SRList)			
-			end;
-		%%% informuj lbsr o dictionary, pri tom ako sa vytbvara mirror lbsr sa dozaduje o dict	
-		{_Pid, giveDict} ->
-			io:format("serviceRegister~p: dostal som ziadost give dictionary od lbsr~n",[self()]),
-			lbsr ! {self(), dict, Dict},
-			io:format("serviceRegister: poslal som dictionary~n"),
-			loop(Mode, Dict, MyMonitor,SRList);
-		%%%% aktualizacia mirror, dostal som od lbsr aktualny dict	
-		{_Pid, dict, Dict2} ->
-			io:format("serviceRegister: ~p dostal som dictionary~n",[self()]),
-			loop(Mode, Dict2, MyMonitor,SRList);	
-		
-			%% kill signal
-		{die, Pid, Reason} ->
-			io:format("serviceRegister: prijal som die signal od ~p~n", [Pid]),
-			exit(Reason);
-
-		{Pid, srList, SRList2} ->
-			io:format("serviceRegister~p: dostal som novy srlist ~p od ~p~n",[self(),SRList2,Pid]),
-			loop(Mode,Dict,MyMonitor,SRList2);	
+handle_cast(_Msg, State) -> {noreply, State}.
+handle_info(_Info, State) -> {noreply, State}.
+terminate(_Reason, _State) -> ok.
+code_change(_OldVsn, State, Extra) -> {ok, State}.
 
 
-			%% padol mi monitor
-		{'DOWN', MyMonitor, process, Pid, Reason} ->
-			io:format("serviceRegister: padol moj monitor ~p dovod ~p, restartujem ~n",[Pid, Reason]),
+% other ........................
 
-			if
-				Mode  =:= master ->
-					MyMonitor2 = serviceRegisterMonitor:start(sr);
-				true ->
-					MyMonitor2 = serviceRegisterMonitor:start(self())	
-			end,
-			loop(Mode, Dict, MyMonitor2,SRList);
-
-
-		Any ->
-			io:format("serviceRegister~p: unknown request ~p~n",[self(),Any]),
-			loop(Mode, Dict, MyMonitor,SRList)			
-					
-	end.
-	
-
-
-%%%%  tuna bude praca s dictionary -> podla id sluzby sa najde prislusny lbss
-findLbSs(ServiceId, Dict) ->
-	LbSsPid = dict:fetch(ServiceId, Dict),
-	LbSsPid.	
-
-%%%% vytvori novy dict s lbss pre ss  -> iba master
-createDictOfLbSs() ->
-	Dict = dict:new(),
-	Dict.
-
-%%% list vsetkych klucov -> serviceID -> moze kazdy sr
-showAllKeys(Dict) ->
-	io:format("SR-showAllKeys~n"),
-	io:format("~p~n",[dict:fetch_keys(Dict)]),
-	io:format("SR-showAllKeys-finished~n").
-
-%%% pridaj servie id do slovnika -> pri pridani novej sluzby -> treba zaroven vytvorit novy lbss a jeho adresu pridat danemu klucu
 addServiceId(Dict, ServiceId) ->
 	NewPid = spawn(fun() -> loadBalancerSS:start(ServiceId)end),
 	Dict1 = dict:store(ServiceId, NewPid, Dict),
 	Dict1.	
 
-%% ukaz vsetky dvojice ServiceId - LbSsPid --list
-showAllPairs(Dict) ->
-	io:format("SR-shwoAllPairs~n"),
-	io:format("~p~n",[dict:to_list(Dict)]),
-	io:format("SR-shwoAllPairs-finished~n").
-
-
-
-
-
-
-
-
-
-
+informSRList(Dict, SRL) ->
+	lists:foreach(
+		fun(Pid) -> 
+			if
+				Pid =:= self() ->
+					ok;
+				true ->	
+					serviceRegister:newDict(Pid,Dict)
+	 		end
+	 	end
+	 , SRL).	

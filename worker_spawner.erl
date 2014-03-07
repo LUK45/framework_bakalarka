@@ -14,8 +14,9 @@ start(Session, Name, Lbsr_pid, Ch_pid) ->
 %% startuje wokrera -> musi poznat adresu cache handlera a load balancera pre serrvice registre, dalej spusti loop v ktorej caka na vysledkok od workera
 spawn_worker(Session, Name, Lbsr_pid, Ch_pid) -> 
 	MojePid = self(),
-	register(Name,WorkerPid = spawn(fun() -> worker:start(Lbsr_pid, Ch_pid, MojePid) end)),
-	loop(Session,Name, WorkerPid).
+	{ok, Wpid} = worker:start_link(ar),
+	register(Name,Wpid),
+	loop(Session,Name, Wpid).
 
 
 

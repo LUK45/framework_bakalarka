@@ -17,12 +17,30 @@ io:format("===========================================================~ninitModu
 
 	%% service registrer start v mode master, dict null
 	%register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,null) end)),
-	Dict = dict:new(),
-	register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,Dict,[self()]) end)),
+	Dict = dict:store(mode, master, dict:new()),
+	D2 = dict:store(dict, dict:new(), Dict),
+	D3 = dict:store(srList, [], D2),
 
-	%% load balancer pre service regisre start
-	SrList = [],
-	register(Lbsr, Lbsr_pid = spawn(fun() -> loadBalancerSR:start(SrList) end)),
+
+
+	%register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,Dict,[self()]) end)),
+
+	{ok, SrMst_pid} = serviceRegister:start_link(D3),
+	register(SrMst,SrMst_pid),
+
+
+%% load balancer pre service regisre start
+	SrList = [SrMst_pid],
+	%Dict2=dict:new(),
+	Dict3 = dict:store(srList,SrList,dict:new()),
+	Dict4 = dict:store(myMonitor, null, Dict3),
+	
+	%register(Lbsr, Lbsr_pid = spawn(fun() -> loadBalancerSR:start(SrList) end)),
+
+	{ok, Lbsr_pid} = loadBalancerSR:start_link(Dict4),
+	register(Lbsr,Lbsr_pid),
+
+
 
 
 %%% nastartuje worker spawnera pri novom requeste
