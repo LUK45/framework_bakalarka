@@ -1,38 +1,29 @@
 -module(worker_spawner).
+%% gen_server_mini_template
+-behaviour(gen_server).
+-export([start_link/1,spawnWorker/2]).
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+terminate/2, code_change/3]).
 
-%-compile(erxport_all).
--export([spawn_worker/4, start/4]).
+start_link(State) -> gen_server:start_link( ?MODULE, State, []).
 
+init(State) -> 
+	io:format("worker_spawner:~p~n",[self()]),
+	{ok, State}.
 
+spawnWorker(Pid,Name) -> gen_server:cast(Pid, {spawnWorker,Name}).
 
-start(Session, Name, Lbsr_pid, Ch_pid) -> 
-	io:format("workerspawner: nastartovany , moje pid je ~p~n", [self()]),
-	spawn_worker(Session, Name, Lbsr_pid, Ch_pid).
+handle_call(_Request, _From, State) -> {reply, reply, State}.
 
-
-
-%% startuje wokrera -> musi poznat adresu cache handlera a load balancera pre serrvice registre, dalej spusti loop v ktorej caka na vysledkok od workera
-spawn_worker(Session, Name, Lbsr_pid, Ch_pid) -> 
-	MojePid = self(),
+handle_cast({spawnWorker,Name},State) ->
 	{ok, Wpid} = worker:start_link(ar),
 	register(Name,Wpid),
-	loop(Session,Name, Wpid).
+	State2 = dict:erase(myWorker,State),
+	State3 = dict:store(myWorker,Name,State2),
+	{noreply,State3};
 
-
-
-%% worker spawner caka na vysledok od workera 
-loop(Session,Name, WorkerPid) ->
-	%Name ! {self(),koniec},
-	io:format("worker spawner: moje pid je ~p workerove pid je: ~p a meno: ~p ~n", [self(),WorkerPid, Name]),
-	receive 
-		{WorkerPid, Msg} -> 
-			io:format("worker spawner: ~p~n",[Msg]),
-			loop(Session,Name, WorkerPid);
-		Any ->	
-			io:format("worker spawner: any ~p~n",[Any]),
-			loop(Session,Name, WorkerPid)
-	%after 5000 ->
-			
-	%	io:format("workerspawner: spawner presiel cas~n")
-		
-	end.			
+handle_cast(_Msg, State) -> {noreply, State}.
+handle_info(_Info, State) -> {noreply, State}.
+terminate(_Reason, _State) -> ok.
+code_change(_OldVsn, State, Extra) -> {ok, State}.

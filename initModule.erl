@@ -47,7 +47,10 @@ io:format("===========================================================~ninitModu
 %start_worker_spawner(Ws_name,Session) ->
 	Lp = Lbsr_pid,
 	Cp = Ch_pid,
-	Ws_pid = spawn(fun() -> worker_spawner:start(Session, Ws_name,Lp, Cp) end).
+
+	WState = dict:store(myWorker, null,dict:new()),
+	{ok,Ws_pid} = worker_spawner:start_link(WState),
+	register(Ws_name,Ws_pid).
 
 	%register(EH , _EH_pid = spawn(fun() -> errorHandler:start(Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid,SrList) end)).
 

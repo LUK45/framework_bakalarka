@@ -119,7 +119,8 @@ code_change(_OldVsn, State, Extra) -> {ok, State}.
 % other ........................
 
 addServiceId(Dict, ServiceId) ->
-	NewPid = spawn(fun() -> loadBalancerSS:start(ServiceId)end),
+	State = dict:store(serviceId, ServiceId, dict:new()),
+	{ok,NewPid} = loadBalancerSS:start_link(State),
 	Dict1 = dict:store(ServiceId, NewPid, Dict),
 	Dict1.	
 
