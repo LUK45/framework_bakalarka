@@ -13,39 +13,59 @@ terminate/2, code_change/3]).
 start_link(Dict) -> gen_server:start_link(?MODULE, Dict, []).
 
 
-init(D2) -> 
-	%D2 = dict:store(srList, [self()], Dict),
-	io:format("serviceRegister~p: ~n~p~n",[self(), D2]),
-
-	ServicesDict = dict:fetch(dict,D2),
+init(St) -> 
+	io:format("serviceRegister~p: ~n~p~n",[self(), St]),
+	Mode = dict:fetch(mode, St),
 	if
-		ServicesDict =:= null ->
-			io:format("serviceRegister~p: mam dict null~n",[self()]),
-			ServicesDict2 = loadBalancerSR:giveServicesDict(lbsr);
-		true ->
-			io:format("serviceRegister~p: nemam dict null~n",[self()]),
-			ServicesDict2 = ServicesDict
-	end,
+		Mode =:= master ->
+			register(sr, self()),
+			case whereis(lbsr) of
 
-	D3 = dict:erase(dict,D2),
-	D4 = dict:store(dict,ServicesDict2,D3),
-    
-    Mode = dict:fetch(mode, D4),
-    SRL = dict:fetch(srList, D4),
-    if
-    	SRL =:= null ->
-    		SRL2 = loadBalancerSR:giveSRList(lbsr);
-    	SRL =:= newMirror ->
-    		SRL2 = SRL;	
-    	true ->
-    		SRL2 = [self()]		
-    end,
+				undefined ->
+					io:format("serviceRegister:~p false reg~n",[self()]),
+					SRL = [self()];
+
+				Pid  ->
+					io:format("serviceRegister:~p true reg~n",[self()]),
+					SRL = loadBalancerSR:giveSRList(lbsr)
+											
+			end,
+			St2 = dict:store(srList, SRL, St);
+		true -> St2 = St	
+	end,
+	io:format("serviceRegister:~p after reg~n",[self()]),
+	
 
 	
-	D5 = dict:store(srList, SRL2, D4),
+	Lbsr = whereis(lbsr),
+	Sr = whereis(sr),
+	case {Mode,Lbsr,Sr} of
 
-	io:format("serviceRegister~p: ~n~p~n",[self(), D5]),
-	State = D5,
+	    {normal, _, undefined} ->
+		    io:format("serviceRegister:~p mode normal, sr down~n",[self()]), %%% toto by enmalo nastat -> doriesit!!!
+	    	Dict2 = noDict;
+	    
+	    {normal, _, Pi} -> 
+	    	Dict2 = loadBalancerSR:giveServicesDict(sr); 
+	    
+	    
+	    {master, undefined, _} ->
+	    	Dict2 = dict:new();
+	    
+	    {master, P, _} ->
+	    	Dict = loadBalancerSR:giveServicesDict(lbsr),
+	    	if
+	    		Dict =:= noDict ->
+	    			Dict2 = dict:new();
+	    		true -> Dict2 = Dict	
+	    	end
+	    	
+	end,   
+
+	State = dict:store(dict, Dict2, St2),
+
+	
+	io:format("serviceRegister~p: ~n~p~n",[self(), State]),
 	{ok, State}.
 
 addService(Pid, ServiceId) -> gen_server:cast(Pid, {addService,ServiceId}).
@@ -56,6 +76,8 @@ newSrList(Pid,SRL) -> gen_server:cast(Pid, {newSrList,SRL}).
 
 newDict(Pid, Dict) -> gen_server:cast(Pid, {newDict, Dict}).
 
+
+
 find_LbSs(Pid, ServiceId, WorkerPid) -> gen_server:call(Pid, {find_LbSs, ServiceId, WorkerPid}).
 
 giveServicesDict(Pid) -> gen_server:call(Pid,{giveServicesDict}).
@@ -65,7 +87,13 @@ giveServicesDict(Pid) -> gen_server:call(Pid,{giveServicesDict}).
 %% gen_server callbacks.........................................................................................
 
 handle_call({giveServicesDict} , _From, State) ->
-	Reply = dict:fetch(dict, State),
+	case dict:is_key(dict,State) of
+		true ->
+			Reply = dict:fetch(dict, State);
+		false ->
+			Reply = noDict	
+	end,
+	
 	{reply,Reply, State};
 
 
@@ -97,6 +125,8 @@ handle_cast({addService, ServiceId}, State) ->
 			State2 = State	
 	end,
 	{noreply, State2};
+
+
 
 handle_cast({newSrList,SRL}, State) ->
 	State1= dict:erase(srList,State),

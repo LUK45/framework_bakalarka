@@ -38,6 +38,12 @@ compile_core() ->
 	c:c(loadBalancerSRMonitor),
 	io:format("makefile: loadBalancerSRMonitor.erl compiled~n~n"),
 
+	c:c(lbsrSupervisor),
+	io:format("makefile: lbsrSupervisor.erl compiled~n~n"),
+
+
+	c:c(serviceRegisterSupervisor),
+	io:format("makefile: serviceRegisterSupervisor.erl compiled~n~n"),
 
 		ok.
 	
