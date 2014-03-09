@@ -3,7 +3,7 @@
 %% gen_server_mini_template
 -behaviour(gen_server).
 
--export([start_link/0, find_LbSs/3, addMirror/1, giveSRList/1, giveServicesDict/1, showSRList/1, srDown/3]).
+-export([start_link/0, find_LbSs/3, addMirror/1, giveSRList/1, giveServicesDict/1, showSRList/1, srDown/3, newSR/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 terminate/2, code_change/3]).
@@ -38,6 +38,8 @@ giveSRList(Pid) ->
 io:format("lllll~n"),
 gen_server:call(Pid, {giveSRList}).
 
+newSR(Pid,NewSR) -> gen_server:cast(Pid, {newSR, NewSR}).
+
 showSRList(Pid) -> gen_server:cast(Pid, {showSRList}).
 
 giveServicesDict(Pid) -> gen_server:call(Pid,{giveServicesDict}).
@@ -52,13 +54,21 @@ srDown(Pid,Mode,From) -> gen_server:cast(Pid, {srDown,Mode,From}).
 handle_call({giveServicesDict} , From, State) ->
 	io:format("lbsr giving dict~n"),
 	SRList = getSRListFromState(srList,State),
+	Length = queue:len(SRList), 
 	if
-		length(SRList) > 1 ->
-			{SRpid,SRList2} = loadBalancerRoundRobin:selectServer(SRList),
-			io:format("lbsr~p: give dict ~p~n",[self(), SRpid]),
+		Length > 1 ->
+			case loadBalancerRoundRobin:selectServer(SRList) of
+				{SRpid, SRList2} ->
+					io:format("lbsr~p: give dict ~p~n",[self(), SRpid]),
+					Reply = serviceRegister:giveServicesDict(SRpid);
+				{-1} ->
+					Reply = noServiceRegister,
+					SRList2 = SRList	
+			end,
+			
 			State1= dict:erase(srList,State),
 			State2 = dict:store(srList,SRList2,State1),	
-			Reply = serviceRegister:giveServicesDict(SRpid),
+			
 			io:format("lbsr: ~p dict~p~n",[self(),Reply]);
 		true ->
 			Reply = noDict,
@@ -78,13 +88,13 @@ handle_call({giveSRList}, From, State) ->
 		{Pid} ->
 			From2 = From	
 	end,
-	case lists:member(From2,SRL) of
+	case queue:member(From2,SRL) of
 				true ->
 					io:format("loadbalancerSR~p: ~p, ~p uz bol v liste, nepridavam~n",[self(), From, From2]),
 					SRL2 = SRL;
 				false ->
 					io:format("loadbalancerSR~p: ~p, ~p nebol v liste, pridavam~n",[self(),From, From2]),
-					SRL2 = SRL ++ [From2]
+					SRL2 = queue:in(From2, SRL)
 					%informSRList(SRL2)
 			
 	end,
@@ -99,13 +109,22 @@ handle_call({find_LbSs,ServiceId,WorkerPid} , _From, State) ->
 	%io:format("lbsr: handle~n"), 
 	SRList = getSRListFromState(srList,State),
 	%io:format(";lbsr ~p~n",[SRList]),
-	{SRpid,SRList2} = loadBalancerRoundRobin:selectServer(SRList),
+	case loadBalancerRoundRobin:selectServer(SRList) of
+				{SRpid, SRList2} ->
+					io:format("lbsr~p: give dict ~p~n",[self(), SRpid]),
+					io:format("lbsr~p: selected sr is ~p~n",[self(), SRpid]),
+					Reply = serviceRegister:find_LbSs(SRpid,ServiceId,WorkerPid);
+					
+				{-1} ->
+					Reply = noServiceRegister,
+					SRList2 = SRList	
+	end,
 	%io:format("lbsr~p: ~p~n",[self(),SRpid]),
 	%State2 = updateStateSRList(srList, fun(V) -> V=SRList2 end, State),
-	io:format("lbsr~p: selected sr is ~p~n",[self(), SRpid]),
+	
 	State1= dict:erase(srList,State),
 	State2 = dict:store(srList,SRList2,State1),	
-	Reply = serviceRegister:find_LbSs(SRpid,ServiceId,WorkerPid),
+	
 	{reply,Reply, State2};
 
 
@@ -116,9 +135,28 @@ handle_cast({showSRList}, State) ->
 	io:format("lbsr~p: srlist: ~p~n",[self(), dict:fetch(srList, State)]),
 	{noreply, State};
 
+
+handle_cast({newSR,NewSR}, State) ->
+	SRL = dict:fecth(srList, State),
+	case queue:member(NewSR,SRL) of
+				true ->
+					SRL2 = SRL;
+				false ->
+					SRL2 = queue:in(NewSR, SRL)
+					%informSRList(SRL2)
+			
+	end,
+	St = dict:erase(srList,State),
+	St2 = dict:store(srlist, SRL2, St),
+	serviceRegister:newSrList(sr, SRL2),
+	io:format("lbsr~p: new sr list: ~p~n",[self(), SRL2]),
+	{noreply, St2}; 
+
 handle_cast({srDown, Mode,From}, State) ->
 	SRL = dict:fetch(srList, State),
-	SRL2 = lists:delete(From, SRL),
+	
+	SRL2 = queue:from_list(lists:delete(From, queue:to_list(SRL))),
+	
 	case Mode of
 			master ->
 				io:format("lbsr~p : master down, new srlist: ~p~n",[self(), SRL2]);
@@ -139,13 +177,14 @@ handle_cast({addMirror}, State) ->
 
 	SRState = dict:store(mode, normal, dict:new()),
 
-	{ok, Pid} = serviceRegisterSupervisor:start_link(SRState),
+	{ok,Pid} = serviceRegisterSupervisor:start_link(SRState),
 	[{Id, Child, Type, Modules}] = supervisor:which_children(Pid),
 	SRList = getSRListFromState(srList,State),
-	SRL2 = SRList ++ [Child],
+	SRL2 = queue:in(Child,SRList),
 	St2 = dict:erase(srList, State),
 	St3 = dict:store(srList, SRL2, St2),
 	serviceRegister:newSrList(sr,SRL2),
+	io:format("lbsr~p : addMirror new srlist ~p~n",[self(), SRL2]),	
 	{noreply, St3};	
 
 

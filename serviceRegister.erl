@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 -export([start_link/1,find_LbSs/3,addService/2,giveSRList/1,newDict/2,
-		newSrList/2,giveServicesDict/1]).
+		newSrList/2,giveServicesDict/1,showSRList/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -24,7 +24,7 @@ init(St) ->
 
 				undefined ->
 					io:format("serviceRegister:~p false reg~n",[self()]),
-					SRL = [self()];
+					SRL = queue:in(self(), queue:new());
 
 				Pid  ->
 					io:format("serviceRegister:~p true reg~n",[self()]),
@@ -33,7 +33,8 @@ init(St) ->
 											
 			end,
 			St2 = dict:store(srList, SRL, St);
-		true -> St2 = St	
+		true -> 
+			St2 = St	
 	end,
 	io:format("serviceRegister:~p after reg~n",[self()]),
 	
@@ -91,6 +92,10 @@ newSrList(Pid,SRL) -> gen_server:cast(Pid, {newSrList,SRL}).
 newDict(Pid, Dict) -> gen_server:cast(Pid, {newDict, Dict}).
 
 
+showSRList(Pid) -> gen_server:cast(Pid, {showSRList}).
+
+
+
 
 find_LbSs(Pid, ServiceId, WorkerPid) -> gen_server:call(Pid, {find_LbSs, ServiceId, WorkerPid}).
 
@@ -144,7 +149,9 @@ handle_cast({addService, ServiceId}, State) ->
 	end,
 	{noreply, State2};
 
-
+handle_cast({showSRList}, State) ->
+	io:format("lbsr~p: srlist: ~p~n",[self(), dict:fetch(srList, State)]),
+	{noreply, State};
 
 handle_cast({newSrList,SRL}, State) ->
 	State1= dict:erase(srList,State),
@@ -183,6 +190,7 @@ addServiceId(Dict, ServiceId) ->
 	Dict1.	
 
 informSRList(Dict, SRL) ->
+	L = queue:to_list(SRL),
 	lists:foreach(
 		fun(Pid) -> 
 			if
@@ -192,4 +200,4 @@ informSRList(Dict, SRL) ->
 					serviceRegister:newDict(Pid,Dict)
 	 		end
 	 	end
-	 , SRL).	
+	 , L).	
