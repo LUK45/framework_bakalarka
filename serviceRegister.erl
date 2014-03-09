@@ -15,10 +15,11 @@ start_link(Dict) -> gen_server:start_link(?MODULE, Dict, []).
 
 init(St) -> 
 	io:format("serviceRegister~p: ~n~p~n",[self(), St]),
+	process_flag(trap_exit, true),
 	Mode = dict:fetch(mode, St),
 	if
 		Mode =:= master ->
-			register(sr, self()),
+			
 			case whereis(lbsr) of
 
 				undefined ->
@@ -27,7 +28,8 @@ init(St) ->
 
 				Pid  ->
 					io:format("serviceRegister:~p true reg~n",[self()]),
-					SRL = loadBalancerSR:giveSRList(lbsr)
+					SRL = loadBalancerSR:giveSRList(lbsr),
+					io:format("sr~p: srlist: ~p~n",[self(), SRL])
 											
 			end,
 			St2 = dict:store(srList, SRL, St);
@@ -46,16 +48,21 @@ init(St) ->
 	    	Dict2 = noDict;
 	    
 	    {normal, _, Pi} -> 
+	    io:format("sr~p: druha~n",[self()]),
 	    	Dict2 = loadBalancerSR:giveServicesDict(sr); 
 	    
 	    
 	    {master, undefined, _} ->
+	    io:format("sr~p: tretia~n",[self()]),
 	    	Dict2 = dict:new();
 	    
 	    {master, P, _} ->
+	    io:format("sr~p: stvrta~n",[self()]),
 	    	Dict = loadBalancerSR:giveServicesDict(lbsr),
+	    	io:format("sr~p: dostal som dict ~p~n",[self(), Dict]),
 	    	if
 	    		Dict =:= noDict ->
+
 	    			Dict2 = dict:new();
 	    		true -> Dict2 = Dict	
 	    	end
@@ -63,6 +70,13 @@ init(St) ->
 	end,   
 
 	State = dict:store(dict, Dict2, St2),
+	if
+		Mode =:= master ->
+			io:format("sr~p: som master registrujem sa~n",[self()]),
+			register(sr, self());
+		true ->	
+			io:format("sr~p: nie som master neregistrujem sa~n",[self()])
+	end,
 
 	
 	io:format("serviceRegister~p: ~n~p~n",[self(), State]),
@@ -87,11 +101,15 @@ giveServicesDict(Pid) -> gen_server:call(Pid,{giveServicesDict}).
 %% gen_server callbacks.........................................................................................
 
 handle_call({giveServicesDict} , _From, State) ->
+	io:format("sr: ~p givingdist~n",[self()]),	
 	case dict:is_key(dict,State) of
 		true ->
-			Reply = dict:fetch(dict, State);
+		Reply = dict:fetch(dict, State),
+		io:format("sr: ~p givingdist~p~n",[self(),Reply]);
+			
 		false ->
-			Reply = noDict	
+			Reply = noDict	,
+		io:format("sr: ~p givingdist~p~n",[self(),Reply])
 	end,
 	
 	{reply,Reply, State};
@@ -142,7 +160,17 @@ handle_cast({newDict, Dict}, State) ->
 
 handle_cast(_Msg, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
-terminate(_Reason, _State) -> ok.
+terminate(normal, _State) -> io:format("sr~p: terminating reason ~p~n",[self(), normal]), ok;
+terminate(Reason, State) -> 
+	io:format("sr~p: terminating reason ~p~n",[self(), Reason]),
+	Mode = dict:fetch(mode, State),
+	if
+		Mode =:= master ->
+			loadBalancerSR:srDown(lbsr,master,self());
+		true ->
+			loadBalancerSR:srDown(lbsr,normal,self())
+	end,
+		 ok.
 code_change(_OldVsn, State, Extra) -> {ok, State}.
 
 

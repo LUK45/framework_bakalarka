@@ -19,6 +19,7 @@ io:format("===========================================================~ninitModu
 	%register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,null) end)),
 	Dict = dict:store(mode, master, dict:new()),
 	{ok, Pid} = serviceRegisterSupervisor:start_link(Dict),
+	register(srsup, Pid),
 	io:format("init: pid = ~p aaa ~p ~n",[Pid,supervisor:which_children(Pid)]),
 
 
@@ -29,8 +30,8 @@ io:format("===========================================================~ninitModu
 
 
 %% load balancer pre service regisre start
-	lbsrSupervisor:start_link(),
-	%register(Lbsr,Lbsr_pid),
+	{ok, Pid2} = lbsrSupervisor:start_link(),
+	register(lbsrsup, Pid2),
 
 
 

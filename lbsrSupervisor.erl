@@ -11,5 +11,5 @@ init([]) ->
     {ok, {{one_for_one, 3, 60},
          [{loadBalancerSR,
            {loadBalancerSR, start_link, []},
-           temporary, 1000, worker, [loadBalancerSR]}
+           permanent, 1000, worker, [loadBalancerSR]}
          ]}}.

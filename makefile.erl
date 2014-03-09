@@ -29,14 +29,14 @@ compile_core() ->
 	io:format("makefile: serviceRegister.erl compiled~n~n"),
 	c:c(initModule),
 	io:format("makefile: initModule.erl compiled~n~n"),
-	c:c(errorHandler),
-	io:format("makefile: errorHandler.erl compiled~n~n"),
+%	c:c(errorHandler),
+%	io:format("makefile: errorHandler.erl compiled~n~n"),
 
-	c:c(serviceRegisterMonitor),
-	io:format("makefile: serviceRegisterMonitor.erl compiled~n~n"),
+%	c:c(serviceRegisterMonitor),
+%	io:format("makefile: serviceRegisterMonitor.erl compiled~n~n"),
 
-	c:c(loadBalancerSRMonitor),
-	io:format("makefile: loadBalancerSRMonitor.erl compiled~n~n"),
+%	c:c(loadBalancerSRMonitor),
+%	io:format("makefile: loadBalancerSRMonitor.erl compiled~n~n"),
 
 	c:c(lbsrSupervisor),
 	io:format("makefile: lbsrSupervisor.erl compiled~n~n"),

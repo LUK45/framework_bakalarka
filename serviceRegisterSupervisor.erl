@@ -11,5 +11,5 @@ init(Dict) ->
     {ok, {{one_for_one, 3, 60},
          [{serviceRegister,
            {serviceRegister, start_link, [Dict]},
-           temporary, 1000, worker, [serviceRegister]}
+           permanent, 1000, worker, [serviceRegister]}
          ]}}.
