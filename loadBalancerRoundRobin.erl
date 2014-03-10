@@ -1,7 +1,7 @@
 -module(loadBalancerRoundRobin).
+-behaviour(loadBalancerBehaviour).
 
-
--compile(export_all).
+-export([selectServer/1]).
 
 %%%%% round robin -> pride list moznych serverov ktore sa tocia do kruhu
 selectServer(Q) ->
