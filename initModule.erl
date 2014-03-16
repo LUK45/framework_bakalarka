@@ -9,19 +9,18 @@
 
 %%% nastartuje komponenty pri prvom zapnuti systemu
 first_start(Ws_name, Session) -> 
-io:format("===========================================================~ninitModule: nastartovany , moje pid je ~p~n", [self()]),
-
+io:format("===========================================================~ninitModule: nastartovany , moje pid je ~p~n", [self()]).
 	%%% cache handler start
 	%register(Ch, Ch_pid = spawn(fun() -> cache_handler:start() end)),
 	
 
 	%% service registrer start v mode master, dict null
 	%register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,null) end)),
-	Dict = dict:store(mode, master, dict:new()),
-	{ok, Pid} = serviceRegisterSupervisor:start_link(Dict),
-	register(srsup, Pid),
-	io:format("init: pid = ~p aaa ~p ~n",[Pid,supervisor:which_children(Pid)]),
-
+%	Dict = dict:store(mode, master, dict:new()),
+%	{ok, Pid} = rootSrSupervisor:start_link(Dict),
+%	register(rootSR, Pid),
+%	io:format("init: pid = ~p aaa ~p ~n",[Pid,supervisor:which_children(Pid)]),
+%
 
 	%register(SrMst, SrMst_pid = spawn(fun() -> serviceRegister:start(master,Dict,[self()]) end)),
 
@@ -30,8 +29,8 @@ io:format("===========================================================~ninitModu
 
 
 %% load balancer pre service regisre start
-	{ok, Pid2} = lbsrSupervisor:start_link(),
-	register(lbsrsup, Pid2),
+	%{ok, Pid2} = rootLbSupervisor:start_link(),
+	%register(rootLB, Pid2),
 
 
 
@@ -40,10 +39,10 @@ io:format("===========================================================~ninitModu
 %start_worker_spawner(Ws_name,Session) ->
 %	Lp = Lbsr_pid,
 %	Cp = Ch_pid,
-
-	WState = dict:store(myWorker, null,dict:new()),
-	{ok,Ws_pid} = worker_spawner:start_link(WState),
-	register(Ws_name,Ws_pid).
+%
+	%WState = dict:store(myWorker, null,dict:new()),
+	%{ok,Ws_pid} = worker_spawner:start_link(WState),
+	%register(Ws_name,Ws_pid).
 
 	%register(EH , _EH_pid = spawn(fun() -> errorHandler:start(Lbsr,Lbsr_pid, Ch,Ch_pid, Ws_name,Ws_pid, SrMst,SrMst_pid,SrList) end)).
 

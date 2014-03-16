@@ -9,6 +9,7 @@ terminate/2, code_change/3]).
 start_link(State) -> gen_server:start_link( ?MODULE, State, []).
 
 init(State) -> 
+	register(ws, self()),
 	io:format("worker_spawner:~p~n",[self()]),
 	{ok, State}.
 

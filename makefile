@@ -8,7 +8,10 @@ ERL = erl -boot start_clean
 
 MODS = gate worker worker_spawner wtimer loadBalancerSR cache_handler \
 		loadBalancerRoundRobin serviceServer loadBalancerSS serviceRegister \
-		initModule lbsrSupervisor serviceRegisterSupervisor
+		rootSupervisor rootLbSupervisor rootSrSupervisor \
+		initModule lbsrSupervisor serviceRegisterSupervisor rootWsSupervisor \
+		workerSpawnerSupervisor
+
 
 
 all: compile
