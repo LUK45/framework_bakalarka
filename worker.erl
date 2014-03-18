@@ -42,4 +42,4 @@ handle_info(Msg, State) ->
 	{noreply, State}.
 
 terminate(_Reason, _State) -> ok.
-code_change(_OldVsn, State, Extra) -> {ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.

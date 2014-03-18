@@ -26,7 +26,7 @@ init(St) ->
 					io:format("serviceRegister:~p false reg~n",[self()]),
 					SRL = queue:in(self(), queue:new());
 
-				Pid  ->
+				_Pid  ->
 					io:format("serviceRegister:~p true reg~n",[self()]),
 					SRL = loadBalancerSR:giveSRList(lbsr),
 					io:format("sr~p: srlist: ~p~n",[self(), SRL])
@@ -48,7 +48,7 @@ init(St) ->
 		    io:format("serviceRegister:~p mode normal, sr down~n",[self()]), %%% toto by enmalo nastat -> doriesit!!!
 	    	Dict2 = noDict;
 	    
-	    {normal, _, Pi} -> 
+	    {normal, _, _Pi} -> 
 	    io:format("sr~p: druha~n",[self()]),
 	    	Dict2 = loadBalancerSR:giveServicesDict(sr); 
 	    
@@ -57,7 +57,7 @@ init(St) ->
 	    io:format("sr~p: tretia~n",[self()]),
 	    	Dict2 = dict:new();
 	    
-	    {master, P, _} ->
+	    {master, _P, _} ->
 	    io:format("sr~p: stvrta~n",[self()]),
 	    	Dict = loadBalancerSR:giveServicesDict(lbsr),
 	    	io:format("sr~p: dostal som dict ~p~n",[self(), Dict]),
@@ -125,7 +125,7 @@ handle_call({giveSRList}, _From, State) ->
 	Reply = dict:fetch(srList,State),
 	{reply, Reply, State};
 
-handle_call({find_LbSs, ServiceId, WorkerPid}, _From, State) -> 
+handle_call({find_LbSs, ServiceId, _WorkerPid}, _From, State) -> 
 	Reply = dict:fetch(ServiceId, dict:fetch(dict,State)),
 	io:format("serviceRegister~p: posielam ~p ako lbss pre ~p~n",[self(), Reply, ServiceId]),
 	{reply, Reply, State};
@@ -137,8 +137,12 @@ handle_cast({addService, ServiceId}, State) ->
 	Mode = dict:fetch(mode,State),
 	if
 		 Mode =:= master ->
-			Dict1 = addServiceId(dict:fetch(dict,State), ServiceId),
-			%loadBalancerSR:newDict(lbsr,Dict1);
+			Dict = dict:fetch(dict, State),
+			Name = string:concat("lbss", erlang:atom_to_list(ServiceId)),
+	    	LbSsState = dict:store(serviceId, ServiceId, dict:new()),
+			{ok, Pid} = supervisor:start_child(rootLb, {Name,{lbSsSupervisor, start_link, [LbSsState]}, permanent, 1000, supervisor, [lbSsSupervisor]} ),
+			[{_Id, Child, _Type, _Modules}] = supervisor:which_children(Pid),
+			Dict1 = dict:store(ServiceId, Child, Dict),
 			informSRList(Dict1, dict:fetch(srList,State)),
 			State1 = dict:erase(dict,State),
 			State2 = dict:store(dict,Dict1,State1);
@@ -178,16 +182,12 @@ terminate(Reason, State) ->
 			loadBalancerSR:srDown(lbsr,normal,self())
 	end,
 		 ok.
-code_change(_OldVsn, State, Extra) -> {ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 
 % other ........................
 
-addServiceId(Dict, ServiceId) ->
-	State = dict:store(serviceId, ServiceId, dict:new()),
-	{ok,NewPid} = loadBalancerSS:start_link(State),
-	Dict1 = dict:store(ServiceId, NewPid, Dict),
-	Dict1.	
+
 
 informSRList(Dict, SRL) ->
 	L = queue:to_list(SRL),

@@ -52,7 +52,7 @@ srDown(Pid,Mode,From) -> gen_server:cast(Pid, {srDown,Mode,From}).
 
 %% gen_server callbacks.........................................................................................
 
-handle_call({giveServicesDict} , From, State) ->
+handle_call({giveServicesDict} , _From, State) ->
 	io:format("lbsr giving dict~n"),
 	SRList = getSRListFromState(srList,State),
 	Length = queue:len(SRList), 
@@ -84,9 +84,9 @@ handle_call({giveSRList}, From, State) ->
 	SRL = dict:fetch(srList,State),
 	io:format("lbsr:~p giving srlist~n",[self()]),
 	case From of
-		{Pid,Ref} ->
+		{Pid,_Ref} ->
 			From2 = Pid;
-		{Pid} ->
+		{_Pid} ->
 			From2 = From	
 	end,
 	case queue:member(From2,SRL) of
@@ -183,7 +183,7 @@ handle_cast({addMirror}, State) ->
 	io:format("lbsr num ~p~n", [MirrorNumber2]),
 	{ok, Pid} = supervisor:start_child(rootSr, {Name,{serviceRegisterSupervisor, start_link, [SRState]}, permanent, 1000, supervisor, [serviceRegisterSupervisor]} ),
 	%io:format("lbsr ~p ~n", [Pid]),
-	[{Id, Child, Type, Modules}] = supervisor:which_children(Pid),
+	[{_Id, Child, _Type, _Modules}] = supervisor:which_children(Pid),
 	%io:format("lbsr ~p ~n",[Child]),
 	State2 = dict:erase(mirrorNumber, State),
 	State3 = dict:store(mirrorNumber, MirrorNumber2, State2),
@@ -201,7 +201,7 @@ handle_info(_Info, State) -> {noreply, State}.
 
 %terminate(shutdown, S) -> io:format("lbsr:~p shutdown~n",[self()]), ok;
 terminate(Reason, _State) -> io:format("lbsr~p: stopping reason ~p~n",[self(),Reason]), ok.
-code_change(_OldVsn, State, Extra) -> {ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %% other .................................................................................
 
@@ -212,5 +212,5 @@ getSRListFromState(Key, Dict) ->
 
 
 
-informSRList(SRL) -> 
-	lists:foreach(fun(Pid) -> serviceRegister:newSrList(Pid,SRL) end, SRL).
+%informSRList(SRL) -> 
+	%lists:foreach(fun(Pid) -> serviceRegister:newSrList(Pid,SRL) end, SRL).

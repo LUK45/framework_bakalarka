@@ -10,7 +10,7 @@ MODS = gate worker worker_spawner wtimer loadBalancerSR cache_handler \
 		loadBalancerRoundRobin serviceServer loadBalancerSS serviceRegister \
 		rootSupervisor rootLbSupervisor rootSrSupervisor \
 		initModule lbsrSupervisor serviceRegisterSupervisor rootWsSupervisor \
-		workerSpawnerSupervisor
+		workerSpawnerSupervisor lbSsSupervisor
 
 
 
