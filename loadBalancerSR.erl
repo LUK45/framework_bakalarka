@@ -24,8 +24,9 @@ init([]) ->
 	
 	%pridat onitor
 	State = dict:store(srList, SRL2,dict:new()),
-	io:format("lbsr~p: my state: ~p~n",[self(), State]),
-	{ok, State}.
+	State2 = dict:store(mirrorNumber, 0, State),
+	io:format("lbsr~p: my state: ~p~n",[self(), State2]),
+	{ok, State2}.
 
 
 addMirror(Pid) -> gen_server:cast(Pid, {addMirror}).
@@ -176,15 +177,22 @@ handle_cast({addMirror}, State) ->
 	%Dict= serviceRegister:giveServicesDict(SRpid),
 
 	SRState = dict:store(mode, normal, dict:new()),
-
-	{ok,Pid} = serviceRegisterSupervisor:start_link(SRState),
+	MirrorNumber = dict:fetch(mirrorNumber, State),
+	MirrorNumber2 = MirrorNumber + 1,
+	Name = string:concat("mirror", erlang:integer_to_list(MirrorNumber2)),
+	io:format("lbsr num ~p~n", [MirrorNumber2]),
+	{ok, Pid} = supervisor:start_child(rootSr, {Name,{serviceRegisterSupervisor, start_link, [SRState]}, permanent, 1000, supervisor, [serviceRegisterSupervisor]} ),
+	%io:format("lbsr ~p ~n", [Pid]),
 	[{Id, Child, Type, Modules}] = supervisor:which_children(Pid),
-	SRList = getSRListFromState(srList,State),
+	%io:format("lbsr ~p ~n",[Child]),
+	State2 = dict:erase(mirrorNumber, State),
+	State3 = dict:store(mirrorNumber, MirrorNumber2, State2),
+	SRList = getSRListFromState(srList,State3),
 	SRL2 = queue:in(Child,SRList),
-	St2 = dict:erase(srList, State),
+	St2 = dict:erase(srList, State3),
 	St3 = dict:store(srList, SRL2, St2),
 	serviceRegister:newSrList(sr,SRL2),
-	io:format("lbsr~p : addMirror new srlist ~p~n",[self(), SRL2]),	
+	io:format("lbsr~p : addMirror new srlist ~p ~nand state ~p~n",[self(), SRL2, St3]),	
 	{noreply, St3};	
 
 
@@ -200,6 +208,7 @@ code_change(_OldVsn, State, Extra) -> {ok, State}.
 getSRListFromState(Key, Dict) ->
 	SRList = dict:fetch(Key, Dict),
 	SRList.	
+
 
 
 

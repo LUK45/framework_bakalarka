@@ -11,13 +11,13 @@ start_link() ->
 init([]) ->
 	register(root, self()),
     {ok, {{one_for_one, 3, 60},
-         [{rootSrSupervisor,
-           {rootSrSupervisor, start_link, []},
+         [{rootSr,
+           {rootSrSupervisor, start_link, [{master,masterRoot}]},
            permanent, 1000, supervisor, [rootSrSupervisor]},
-          {rootLbSupervisor,
+          {rootLb,
             {rootLbSupervisor, start_link, []},
             permanent, 1000, supervisor, [rootLbSupervisor]},
-          {rootWsSupervisor,
+          {rootWs,
             {rootWsSupervisor, start_link, []},
             permanent, 1000, supervisor, [rootWsSupervisor]}   	
          ]}}.
